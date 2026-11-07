@@ -1,0 +1,29 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'app.reminder.local'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'app.reminder.local'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// ไม่มี dependency ภายนอกเลย ใช้เฉพาะ Android framework
