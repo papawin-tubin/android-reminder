@@ -127,4 +127,42 @@ public final class Store {
         }
         save(c, list);
     }
+    /** ข้อความ JSON สำหรับสำรองข้อมูล */
+    public static synchronized String exportJson(Context c) {
+        List<Reminder> list = load(c);
+        save(c, list);
+        try (InputStream in = new FileInputStream(new File(c.getFilesDir(), FILE))) {
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            return new String(bo.toByteArray(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /** นำเข้าแทนที่ข้อมูลทั้งหมด คืนจำนวนรายการ ถ้าไฟล์ไม่ถูกต้องจะโยน Exception โดยไม่แตะข้อมูลเดิม */
+    public static synchronized int importJson(Context c, String text) throws Exception {
+        JSONObject root = new JSONObject(text);
+        JSONArray a = root.getJSONArray("items");
+        int max = 0;
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject o = a.getJSONObject(i);
+            String type = o.optString("type", "");
+            if (!Reminder.ONCE.equals(type) && !Reminder.DAILY.equals(type) && !Reminder.MONTHLY.equals(type))
+                throw new IllegalArgumentException("ชนิดรายการไม่ถูกต้อง");
+            max = Math.max(max, o.getInt("id"));
+        }
+        File tmp = new File(c.getFilesDir(), FILE + ".tmp");
+        try (FileOutputStream out = new FileOutputStream(tmp)) {
+            out.write(root.toString().getBytes(StandardCharsets.UTF_8));
+            out.getFD().sync();
+        }
+        if (!tmp.renameTo(new File(c.getFilesDir(), FILE))) throw new RuntimeException("rename failed");
+        nextId = Math.max(root.optInt("nextId", 1), max + 1);
+        List<Reminder> list = load(c);
+        save(c, list);
+        return list.size();
+    }
 }

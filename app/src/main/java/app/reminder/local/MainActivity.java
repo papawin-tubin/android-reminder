@@ -28,6 +28,10 @@ import android.widget.ListView;
 import android.widget.Switch;
 import android.widget.TextView;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -106,6 +110,19 @@ public class MainActivity extends Activity {
         root.addView(empty, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         listView.setEmptyView(empty);
 
+        LinearLayout bk = new LinearLayout(this);
+        bk.setOrientation(LinearLayout.HORIZONTAL);
+        bk.setGravity(Gravity.CENTER);
+        TextView bExp = tv("สำรองข้อมูล", 14, true, ACCENT);
+        TextView bImp = tv("นำเข้าข้อมูล", 14, true, ACCENT);
+        bExp.setPadding(dp(16), dp(10), dp(16), dp(10));
+        bImp.setPadding(dp(16), dp(10), dp(16), dp(10));
+        bExp.setOnClickListener(v -> startBackup());
+        bImp.setOnClickListener(v -> startRestore());
+        bk.addView(bExp);
+        bk.addView(bImp);
+        root.addView(bk, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         TextView about = tv("ผู้สร้าง: MawinIoT · โทร 065-5099395 · v.1", 12, false, MUTED);
         about.setGravity(Gravity.CENTER);
         about.setPadding(0, dp(10), 0, dp(10));
@@ -147,6 +164,72 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         updateBanner();
+    }
+
+    private static final int REQ_BACKUP = 101, REQ_RESTORE = 102;
+
+    private void startBackup() {
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/json");
+        i.putExtra(Intent.EXTRA_TITLE, "reminder-backup.json");
+        try { startActivityForResult(i, REQ_BACKUP); }
+        catch (Exception e) { toast("เครื่องนี้เปิดหน้าเลือกไฟล์ไม่ได้"); }
+    }
+
+    private void startRestore() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        try { startActivityForResult(i, REQ_RESTORE); }
+        catch (Exception e) { toast("เครื่องนี้เปิดหน้าเลือกไฟล์ไม่ได้"); }
+    }
+
+    private void toast(String m) { android.widget.Toast.makeText(this, m, android.widget.Toast.LENGTH_LONG).show(); }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (res != RESULT_OK || data == null || data.getData() == null) return;
+        final Uri uri = data.getData();
+        if (req == REQ_BACKUP) {
+            try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                out.write(Store.exportJson(this).getBytes(StandardCharsets.UTF_8));
+                toast("สำรองข้อมูลแล้ว " + Store.all(this).size() + " รายการ");
+            } catch (Exception e) {
+                toast("สำรองข้อมูลไม่สำเร็จ");
+            }
+        } else if (req == REQ_RESTORE) {
+            final String text;
+            try (InputStream in = getContentResolver().openInputStream(uri)) {
+                ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                text = new String(bo.toByteArray(), StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                toast("อ่านไฟล์ไม่ได้");
+                return;
+            }
+            new AlertDialog.Builder(this)
+                    .setTitle("นำเข้าข้อมูล?")
+                    .setMessage("รายการปัจจุบันทั้งหมดจะถูกแทนที่ด้วยข้อมูลในไฟล์")
+                    .setNegativeButton("ยกเลิก", null)
+                    .setPositiveButton("นำเข้า", (d, w) -> {
+                        try {
+                            for (Reminder r : Store.all(this)) { Alarms.cancel(this, r); Notifier.cancel(this, r.id); }
+                            int n = Store.importJson(this, text);
+                            Alarms.scheduleAll(this);
+                            refresh();
+                            toast("นำเข้าแล้ว " + n + " รายการ");
+                        } catch (Exception e) {
+                            Alarms.scheduleAll(this);
+                            refresh();
+                            toast("ไฟล์ไม่ถูกต้อง นำเข้าไม่ได้ (ข้อมูลเดิมไม่เปลี่ยน)");
+                        }
+                    })
+                    .show();
+        }
     }
 
     private void openEdit(int id) {
