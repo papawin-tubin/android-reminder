@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- ใช้เปิดเว็บเซิร์ฟเวอร์ชั่วคราวในวงแลน (หน้า "เชื่อมต่อคอมพิวเตอร์") -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
@@ -28,6 +30,10 @@
             android:name=".EditActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".LanActivity"
+            android:exported="false" />
 
         <receiver android:name=".AlarmReceiver" android:exported="false" />
         <receiver android:name=".ActionReceiver" android:exported="false" />

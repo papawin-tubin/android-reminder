@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ตั้งเวลาเตือน · จัดการจากคอมพิวเตอร์</title>
+<style>
+:root{--bg:#f1f4f1;--ink:#16221e;--mut:#566660;--acc:#0f6b5c;--line:#d6ddd8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,"Noto Sans Thai",sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 48px}
+h1{margin:0 0 4px;font-size:26px}
+.sub{color:var(--mut);margin-bottom:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
+label{display:block;font-weight:600;margin:12px 0 4px}
+input[type=text],input[type=password],input[type=date],input[type=time],input[type=number],select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+button{font:inherit;border:0;border-radius:8px;padding:10px 16px;cursor:pointer;background:var(--acc);color:#fff}
+button.ghost{background:#fff;color:var(--acc);border:1px solid var(--acc)}
+button.danger{background:#fff;color:#b42318;border:1px solid #b42318}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chips button{background:#fff;color:var(--ink);border:1px solid var(--line);min-width:48px}
+.chips button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.tag{font-size:12px;font-weight:700}
+.err{color:#b42318;min-height:1.4em;margin-top:8px}
+.mut{color:var(--mut);font-size:14px}
+.hide{display:none}
+.item{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.item h3{margin:2px 0;font-size:18px}
+.pill{display:inline-block;margin:0 12px 0 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>ตั้งเวลาเตือน</h1>
+  <div class="sub">จัดการรายการบนมือถือจากคอมพิวเตอร์ (ข้อมูลอยู่ในมือถือเท่านั้น ไม่ผ่านอินเทอร์เน็ต)</div>
+
+  <section id="login" class="card">
+    <label for="pin">รหัส PIN (ดูจากหน้าจอมือถือ)</label>
+    <input id="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+    <div class="row" style="margin-top:12px"><button id="go">เข้าสู่ระบบ</button></div>
+    <div id="loginErr" class="err"></div>
+  </section>
+
+  <section id="app" class="hide">
+    <div class="row" style="margin-bottom:12px">
+      <button id="newBtn">+ เพิ่มการเตือน</button>
+      <button id="reload" class="ghost">โหลดใหม่จากมือถือ</button>
+    </div>
+
+    <form id="form" class="card hide">
+      <h2 id="formTitle" style="margin:0">เพิ่มการเตือน</h2>
+      <label for="title">ชื่อรายการ</label>
+      <input id="title" type="text" maxlength="100" required>
+      <label for="note">โน้ต (ไม่บังคับ)</label>
+      <textarea id="note" rows="2" maxlength="300"></textarea>
+      <label for="type">ชนิด</label>
+      <select id="type">
+        <option value="once">ครั้งเดียว</option>
+        <option value="daily">ทุกวัน</option>
+        <option value="monthly">ทุกเดือน</option>
+      </select>
+      <div id="dateBox"><label for="date">วันที่ (แสดงเป็น ค.ศ. ตามเบราว์เซอร์)</label><input id="date" type="date"></div>
+      <div id="dayBox" class="hide"><label for="day">วันที่ของเดือน</label><input id="day" type="number" min="1" max="31" value="1"></div>
+      <div id="weekBox" class="hide"><label>วันที่ให้เตือน</label><div id="chips" class="row chips"></div></div>
+      <label for="time">เวลา</label>
+      <input id="time" type="time" value="08:00">
+      <div class="row" style="margin-top:16px">
+        <button type="submit">บันทึกลงมือถือ</button>
+        <button type="button" id="cancel" class="ghost">ยกเลิก</button>
+      </div>
+      <div id="formErr" class="err"></div>
+    </form>
+
+    <div id="list"></div>
+    <div id="empty" class="mut hide">ยังไม่มีรายการ</div>
+  </section>
+</main>
+<script>
+const DAYS=['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+const $=id=>document.getElementById(id);
+let pin='', items=[], editId=0, sel=[1,1,1,1,1,1,1];
+
+async function api(path,body){
+  const opt={headers:{'X-Pin':pin}};
+  if(body!==undefined){opt.method='POST';opt.body=JSON.stringify(body);}
+  const r=await fetch(path,opt);
+  let j={};try{j=await r.json();}catch(e){}
+  if(!r.ok){const e=new Error(j.error||('ผิดพลาด '+r.status));e.status=r.status;throw e;}
+  return j;
+}
+function thDate(iso){const p=iso.split('-');return p.length<3?iso:(+p[2])+'/'+(+p[1])+'/'+(+p[0]+543);}
+function daysText(m){if((m&127)===127)return 'ทุกวัน';const o=[];for(let i=0;i<7;i++)if(m&(1<<i))o.push(DAYS[i]);return o.join(' ');}
+function sched(r){
+  if(r.type==='once')return 'ครั้งเดียว '+thDate(r.date)+' เวลา '+r.time+' น.';
+  if(r.type==='monthly')return 'ทุกเดือน วันที่ '+r.day+' เวลา '+r.time+' น.';
+  return daysText(r.weekdays==null?127:r.weekdays)+' เวลา '+r.time+' น.';
+}
+function renderChips(){
+  const box=$('chips');box.innerHTML='';
+  DAYS.forEach((d,i)=>{
+    const b=document.createElement('button');b.type='button';b.textContent=d;
+    if(sel[i])b.className='on';
+    b.onclick=()=>{sel[i]=sel[i]?0:1;renderChips();};
+    box.appendChild(b);
+  });
+}
+function sync(){
+  const t=$('type').value;
+  $('dateBox').classList.toggle('hide',t!=='once');
+  $('dayBox').classList.toggle('hide',t!=='monthly');
+  $('weekBox').classList.toggle('hide',t!=='daily');
+}
+function openForm(r){
+  editId=r?r.id:0;
+  $('formTitle').textContent=r?'แก้ไขการเตือน':'เพิ่มการเตือน';
+  $('title').value=r?r.title:'';
+  $('note').value=r?r.note:'';
+  $('type').value=r?r.type:'once';
+  $('date').value=r&&r.date?r.date:'';
+  $('day').value=r?r.day:1;
+  $('time').value=r?r.time:'08:00';
+  const m=r&&r.weekdays!=null?r.weekdays:127;
+  sel=[0,1,2,3,4,5,6].map(i=>(m&(1<<i))?1:0);
+  renderChips();sync();
+  $('formErr').textContent='';
+  $('form').classList.remove('hide');
+  $('title').focus();
+}
+function render(){
+  const box=$('list');box.innerHTML='';
+  $('empty').classList.toggle('hide',items.length>0);
+  items.forEach(r=>{
+    const c=document.createElement('div');c.className='card item';
+    const l=document.createElement('div');
+    const tag=document.createElement('div');tag.className='tag';
+    tag.textContent=r.type==='once'?'ครั้งเดียว':r.type==='monthly'?'ทุกเดือน':'ทุกวัน';
+    const h=document.createElement('h3');h.textContent=r.title;
+    const s=document.createElement('div');s.className='mut';s.textContent=sched(r);
+    l.append(tag,h);
+    if(r.note){const n=document.createElement('div');n.textContent=r.note;l.append(n);}
+    l.append(s);
+    const a=document.createElement('div');a.className='row';
+    const e=document.createElement('button');e.className='ghost';e.textContent='แก้ไข';e.onclick=()=>openForm(r);
+    const d=document.createElement('button');d.className='danger';d.textContent='ลบ';
+    d.onclick=async()=>{
+      if(!confirm('ลบ "'+r.title+'" ?'))return;
+      try{await api('/api/delete',{id:r.id});await load();}catch(x){alert(x.message);}
+    };
+    a.append(e,d);c.append(l,a);box.appendChild(c);
+  });
+}
+async function load(){
+  const j=await api('/api/list');
+  items=(j.items||[]).slice().sort((a,b)=>a.time<b.time?-1:1);
+  render();
+}
+$('go').onclick=async()=>{
+  pin=$('pin').value.trim();$('loginErr').textContent='';
+  try{await load();$('login').classList.add('hide');$('app').classList.remove('hide');}
+  catch(e){$('loginErr').textContent=e.status===401?'PIN ไม่ถูกต้อง':e.status===429?'ใส่ PIN ผิดหลายครั้ง ถูกล็อก ให้เปิดหน้าเชื่อมต่อบนมือถือใหม่':e.message;}
+};
+$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')$('go').click();});
+$('type').onchange=sync;
+$('newBtn').onclick=()=>openForm(null);
+$('cancel').onclick=()=>$('form').classList.add('hide');
+$('reload').onclick=()=>load().catch(e=>alert(e.message));
+$('form').onsubmit=async ev=>{
+  ev.preventDefault();
+  const t=$('type').value;
+  let m=0;sel.forEach((v,i)=>{if(v)m|=1<<i;});
+  const body={id:editId,title:$('title').value.trim(),note:$('note').value.trim(),type:t,time:$('time').value,
+    date:t==='once'?$('date').value:'',day:parseInt($('day').value||'1',10),weekdays:t==='daily'?m:127};
+  try{await api('/api/save',body);$('form').classList.add('hide');await load();}
+  catch(e){$('formErr').textContent=e.message;}
+};
+renderChips();
+</script>
+</body>
+</html>

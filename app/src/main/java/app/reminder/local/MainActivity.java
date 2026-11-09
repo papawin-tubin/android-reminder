@@ -119,8 +119,12 @@ public class MainActivity extends Activity {
         bImp.setPadding(dp(16), dp(10), dp(16), dp(10));
         bExp.setOnClickListener(v -> startBackup());
         bImp.setOnClickListener(v -> startRestore());
+        TextView bLan = tv("เชื่อมคอม", 14, true, ACCENT);
+        bLan.setPadding(dp(16), dp(10), dp(16), dp(10));
+        bLan.setOnClickListener(v -> startActivity(new Intent(this, LanActivity.class)));
         bk.addView(bExp);
         bk.addView(bImp);
+        bk.addView(bLan);
         root.addView(bk, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView about = tv("ผู้สร้าง: MawinIoT · โทร 065-5099395 · v.1", 12, false, MUTED);
